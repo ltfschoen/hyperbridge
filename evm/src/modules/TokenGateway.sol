@@ -31,7 +31,7 @@ struct SendParams {
     // amount for fee, if bridged token is feetoken require that amount or less is taken by host
     // else, swap the amount for fee into dai and use fee to limit slippage,
     // ideally minAmountOut should be the fees you expect to pay
-    uint256 amountForFee;
+    // uint256 amountForFee;
 }
 
 struct Body {
@@ -140,13 +140,13 @@ contract TokenGateway is IIsmpModule {
             address feeToken = EvmHost(host).dai();
 
             // custody the user's funds
-            require(params.amountForFee <= toBridge, "fee greater than amount");
+            // require(params.amountForFee <= toBridge, "fee greater than amount");
 
             require(
                 IERC20(erc20).transferFrom(from, address(this), params.amount), "Gateway: Insufficient user balance"
             );
 
-            // Calculate output fee in DAI here before swap: We can use swapTokensForExactTokens() on Uniswap since we know the output amount
+            // Calculate output fee in DAI before swap: We can use swapTokensForExactTokens() on Uniswap since we know the output amount
             HostParams memory _hostParams = EvmHost(host).hostParams();
             uint256 _fee = (_hostParams.perByteFee * request.body.length) + request.fee;
 

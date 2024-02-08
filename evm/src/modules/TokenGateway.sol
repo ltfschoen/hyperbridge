@@ -47,6 +47,8 @@ struct Body {
     address to;
 }
 
+uint256 constant BODY_BYTES_SIZE = 160;
+
 contract TokenGateway is IIsmpModule {
     address private host;
     address private admin;
@@ -120,22 +122,6 @@ contract TokenGateway is IIsmpModule {
 
         uint256 toBridge = params.amount;
 
-        bytes memory data = abi.encode(
-            Body({from: from, to: params.to, amount: toBridge, tokenId: params.tokenId, redeem: params.redeem})
-        );
-
-        bytes memory to = _chainToGateway[params.dest];
-        require(to.length > 0, "Unsupported chain");
-
-        DispatchPost memory request = DispatchPost({
-            dest: params.dest,
-            to: to,
-            body: data,
-            timeout: params.timeout,
-            gaslimit: uint64(params.gaslimit),
-            fee: params.fee
-        });
-
         if (erc20 != address(0) && !params.redeem && intendedTokenForFee != address(0)) {
             address feeToken = EvmHost(host).dai();
 
@@ -148,7 +134,8 @@ contract TokenGateway is IIsmpModule {
 
             // Calculate output fee in DAI before swap: We can use swapTokensForExactTokens() on Uniswap since we know the output amount
             HostParams memory _hostParams = EvmHost(host).hostParams();
-            uint256 _fee = (_hostParams.perByteFee * request.body.length) + request.fee;
+            
+            uint256 _fee = (_hostParams.perByteFee * BODY_BYTES_SIZE) + params.fee;
 
             // only swap if the fee token is not the token intended for fee and if the amount the user chose to bridge is > 0
             if (feeToken != intendedTokenForFee && _fee > 0) {
@@ -180,6 +167,22 @@ contract TokenGateway is IIsmpModule {
         } else {
             revert("Gateway: Unknown Token Identifier");
         }
+
+        bytes memory data = abi.encode(
+            Body({from: from, to: params.to, amount: toBridge, tokenId: params.tokenId, redeem: params.redeem})
+        );
+
+        bytes memory to = _chainToGateway[params.dest];
+        require(to.length > 0, "Unsupported chain");
+
+        DispatchPost memory request = DispatchPost({
+            dest: params.dest,
+            to: to,
+            body: data,
+            timeout: params.timeout,
+            gaslimit: uint64(params.gaslimit),
+            fee: params.fee
+        });
 
         IIsmp(host).dispatch(request);
     }

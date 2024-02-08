@@ -16,7 +16,7 @@ contract MiniTest is Test {
 
         Body memory body = Body({
             amount: 100,
-            tokenId: bytes32(0x0000000000000000000000000000000000000000000000000000000000000020),
+            tokenId: keccak256("TOKEN_ID"),
             redeem: false,
             from: vm.addr(uint256(keccak256("from"))),
             to: vm.addr(uint256(keccak256("to")))

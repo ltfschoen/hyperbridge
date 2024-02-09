@@ -153,8 +153,8 @@ contract TokenGateway is IIsmpModule {
                 require(IERC20(intendedTokenForFee).approve(address(uniswapV2Router), intendedFeeTokenAmountIn), "approve failed.");
 
 
-                uniswapV2Router.swapExactTokensForTokens(
-                    intendedFeeTokenAmountIn, _fee, path, tx.origin, block.timestamp
+                uniswapV2Router.swapTokensForExactTokens(
+                    _fee, intendedFeeTokenAmountIn, path, tx.origin, block.timestamp
                 );
 
                 // unchecked {

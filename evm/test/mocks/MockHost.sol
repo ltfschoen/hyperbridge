@@ -14,10 +14,11 @@ contract MockHost {
     bytes _host;
     address relayer;
 
-    constructor(bytes memory host_, address _feeToken, address _relayer) {
+    constructor(bytes memory host_, address _feeToken, address _relayer, uint256 _perByteFee) {
         _host = host_;
         _hostParams.feeTokenAddress = _feeToken;
         relayer = _relayer;
+        _hostParams.perByteFee = _perByteFee;
     }
 
     function host() public view returns (bytes memory) {
@@ -26,6 +27,10 @@ contract MockHost {
 
     function dai() public view returns (address) {
         return _hostParams.feeTokenAddress;
+    }
+
+    function hostParams() public view returns (HostParams memory) {
+        return _hostParams;
     }
 
     /**

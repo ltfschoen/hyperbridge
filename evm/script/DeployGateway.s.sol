@@ -59,8 +59,8 @@ contract DeployScript is Script {
     function deployGateway(address host, address admin, address uniRouter) public {
         ERC6160Ext20 t = new ERC6160Ext20{salt: salt}(admin, "Hyperbridge Test Token", "CORE");
 
-        TokenGateway gateway = new TokenGateway{salt: salt}(admin, uniRouter);
-        gateway.setIsmpHost(host);
+        TokenGateway gateway = new TokenGateway{salt: salt}(admin);
+        gateway.initParams(host, uniRouter);
         t.grantRole(MINTER_ROLE, address(gateway));
         t.grantRole(BURNER_ROLE, address(gateway));
 

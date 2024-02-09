@@ -3,6 +3,7 @@ pragma solidity 0.8.17;
 
 import "ismp/IIsmpModule.sol";
 import "ismp/IIsmp.sol";
+import "ismp/IIsmpHost.sol";
 import "ERC6160/interfaces/IERC6160Ext20.sol";
 import {IERC20} from "openzeppelin/token/ERC20/IERC20.sol";
 import "../hosts/EvmHost.sol";
@@ -42,12 +43,13 @@ struct Body {
     address to;
 }
 
-uint256 constant BODY_BYTES_SIZE = 160;
-
 contract TokenGateway is IIsmpModule {
     address private host;
     address private admin;
-    IUniswapV2Router immutable uniswapV2Router;
+    IUniswapV2Router uniswapV2Router;
+
+    // Bytes size of Body struct
+    uint256 constant BODY_BYTES_SIZE = 160;
 
     // mapping of token identifier to erc6160 contracts
     mapping(bytes32 => address) private _erc6160s;
@@ -77,14 +79,14 @@ contract TokenGateway is IIsmpModule {
         _;
     }
 
-    constructor(address _admin, address _uniswapV2Router) {
+    constructor(address _admin) {
         admin = _admin;
-        uniswapV2Router = IUniswapV2Router(_uniswapV2Router);
     }
 
-    // set the ismp host address
-    function setIsmpHost(address _host) public onlyAdmin {
+    // initialize required parameters
+    function initParams(address _host, address _uniswapV2Router) public onlyAdmin {
         host = _host;
+        uniswapV2Router = IUniswapV2Router(_uniswapV2Router);
     }
 
     function setTokenIdentifiersERC20(bytes32 _tokenId, address _erc20) external onlyAdmin {
@@ -105,51 +107,32 @@ contract TokenGateway is IIsmpModule {
 
     // The Gateway contract has to have the roles `MINTER` and `BURNER`.
     function send(SendParams memory params) public {
+
+        ensureInitSetup();
+
         address from = msg.sender;
-
         address erc20 = _erc20s[params.tokenId];
-
         address erc6160 = _erc6160s[params.tokenId];
-
         address intendedTokenForFee = params.tokenIntendedForFee;
+        address feeToken = IIsmpHost(host).dai();
 
         require(params.to != address(0), "Burn your funds some other way");
+        require(params.amount > 0, "Gateway: Can't bridge zero value");
+        require(intendedTokenForFee != address(0), "Intended fee token not selected");
 
         uint256 toBridge = params.amount;
 
-        if (erc20 != address(0) && !params.redeem && intendedTokenForFee != address(0)) {
-            address feeToken = EvmHost(host).dai();
-
+        if (erc20 != address(0) && !params.redeem) {
             require(
                 IERC20(erc20).transferFrom(from, address(this), params.amount), "Gateway: Insufficient user balance"
             );
 
             // Calculate output fee in DAI before swap: We can use swapTokensForExactTokens() on Uniswap since we know the output amount
-            HostParams memory _hostParams = EvmHost(host).hostParams();
-            uint256 _fee = (_hostParams.perByteFee * BODY_BYTES_SIZE) + params.fee;
+            uint256 _fee = relayerPlusBytesFee(params.fee);
 
-            // only swap if the fee token is not the token intended for fee and if the amount the user chose to bridge is > 0
+            // only swap if the feeToken is not the token intended for fee and if fee > 0
             if (feeToken != intendedTokenForFee && _fee > 0) {
-
-                address[] memory path = new address[](2);
-                path[0] = intendedTokenForFee;
-                path[1] = feeToken;
-
-                uint intendedFeeTokenAmountIn = uniswapV2Router.getAmountsIn(_fee, path)[0];
-
-                // How do we handle cases of slippage
-
-                require(IERC20(intendedTokenForFee).transferFrom(from, address(this), intendedFeeTokenAmountIn), "insufficient intended fee token");
-
-                require(IERC20(intendedTokenForFee).approve(address(uniswapV2Router), intendedFeeTokenAmountIn), "approve failed.");
-
-                uniswapV2Router.swapTokensForExactTokens(
-                    _fee, intendedFeeTokenAmountIn, path, tx.origin, block.timestamp
-                );
-
-                // unchecked {
-                //     toBridge -= params.amountForFee;
-                // }
+                require(handleSwap(from, intendedTokenForFee, feeToken, _fee), "Token swap failed");
             }
         } else if (erc6160 != address(0) && params.redeem) {
             // we're sending an erc6160 asset so we should redeem on the destination if we can.
@@ -187,16 +170,19 @@ contract TokenGateway is IIsmpModule {
         // prefer to give the user erc20
         if (erc20 != address(0) && body.redeem) {
             // a relayer/user is redeeming the native asset
-            require(IERC20(erc20).transfer(body.to, body.amount), "Gateway: Insufficient Balance");
+            // Performing 0.1% calculation and deduction here
+            uint256 _protocolRedeemFee = calculateProtocolRedeemFee(body.amount);
+            uint256 _amountToTransfer = body.amount - _protocolRedeemFee;
+
+            require(IERC20(erc20).transfer(body.to, _amountToTransfer), "Gateway: Insufficient Balance");
         } else if (erc20 != address(0) && erc6160 != address(0)) {
             // relayers double as liquidity providers, todo: protocol fees
-
-            // Perform 0.3% calculation here
-            uint256 _protocolFee = calculateProtocolFee(body.amount);
-            uint256 amountToTransfer = body.amount - _protocolFee;
+            // Perform 0.3% calculation  and deduction here
+            uint256 _protocolBridgeFee = calculateProtocolBridgeFee(body.amount);
+            uint256 _amountToTransfer = body.amount - _protocolBridgeFee;
 
             require(
-                IERC20(erc20).transferFrom(tx.origin, body.to, amountToTransfer), "Gateway: Insufficient relayer balance"
+                IERC20(erc20).transferFrom(tx.origin, body.to, _amountToTransfer), "Gateway: Insufficient relayer balance"
             );
 
             // hand the relayer the erc6160, so they can redeem on the source chain
@@ -241,7 +227,43 @@ contract TokenGateway is IIsmpModule {
         revert("Token gateway doesn't emit Get Requests");
     }
 
-    function calculateProtocolFee(uint256 _amount) private pure returns (uint256 percentFee_) {
-        percentFee_ = (_amount * 300) / 1000;
+    function handleSwap(address _sender, address _fromToken, address _toToken, uint256 _toTokenAmountOut) private returns (bool) {
+        address[] memory path = new address[](2);
+        path[0] = _fromToken;
+        path[1] = _toToken;
+
+        uint _fromTokenAmountIn = uniswapV2Router.getAmountsIn(_toTokenAmountOut, path)[0];
+
+        // How do we handle cases of slippage - Todo: Handle Slippage
+
+        require(IERC20(_fromToken).transferFrom(_sender, address(this), _fromTokenAmountIn), "insufficient intended fee token");
+        require(IERC20(_fromToken).approve(address(uniswapV2Router), _fromTokenAmountIn), "approve failed.");
+
+        uniswapV2Router.swapTokensForExactTokens(
+            _toTokenAmountOut, _fromTokenAmountIn, path, tx.origin, block.timestamp
+        );
+
+        return true;
+    }
+
+    function relayerPlusBytesFee(uint256 _relayerFee) private view returns (uint256) {
+        // Multiply perByteFee by the byte size of the body struct, and sum with relayer fee
+        HostParams memory _hostParams = EvmHost(host).hostParams();
+        uint256 _fee = (_hostParams.perByteFee * BODY_BYTES_SIZE) + _relayerFee;
+
+        return _fee;
+    }
+
+    function calculateProtocolBridgeFee(uint256 _amount) private pure returns (uint256 bridgeFee_) {
+        bridgeFee_ = (_amount * 300) / 100_000;
+    }
+
+    function calculateProtocolRedeemFee(uint256 _amount) private pure returns (uint256 redeemFee_) {
+        redeemFee_ = (_amount * 100) / 100_000;
+    }
+
+    function ensureInitSetup() private view {
+        require(host != address(0), "Gateway: Host is not set");
+        require(address(uniswapV2Router) != address(0), "Gateway: Uniswap router not set");
     }
 }

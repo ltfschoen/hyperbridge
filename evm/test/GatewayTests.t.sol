@@ -76,8 +76,12 @@ contract TokenGatewayTest is Test {
     address user1 = vm.addr(uint256(keccak256("user1")));
     address user2 = vm.addr(uint256(keccak256("user2")));
 
-    function calculateProtocolFee(uint256 _amount) private pure returns (uint256 percentFee_) {
-        percentFee_ = (_amount * 300) / 1000;
+    function calculateProtocolBridgeFee(uint256 _amount) private pure returns (uint256 percentFee_) {
+        percentFee_ = (_amount * 300) / 100_000;
+    }
+
+    function calculateProtocolRedeemFee(uint256 _amount) private pure returns (uint256 redeemFee_) {
+        redeemFee_ = (_amount * 100) / 100_000;
     }
 
     function label() private {
@@ -111,8 +115,8 @@ contract TokenGatewayTest is Test {
         chain_a_usdc = new ERC20Token("USDC-A", "USDC", 18);
         chain_b_usdc = new ERC20Token("USDC-B", "USDC", 18);
 
-        chain_a_gateway = new TokenGateway(owner, address(uni_router));
-        chain_b_gateway = new TokenGateway(owner, address(uni_router));
+        chain_a_gateway = new TokenGateway(owner);
+        chain_b_gateway = new TokenGateway(owner);
 
         chain_a_wrapped_usdc = new ERC6160Ext20(address(chain_a_gateway), "USDC-A", "USDC");
         chain_b_wrapped_usdc = new ERC6160Ext20(address(chain_b_gateway), "USDC-B", "USDC");
@@ -141,7 +145,7 @@ contract TokenGatewayTest is Test {
         chain_b_dai.mint(user2, 1_000_000_000e18);
         chain_b_usdc.mint(user2, 1_000_000_000e18);
 
-        chain_a_gateway.setIsmpHost(address(chain_a_host));
+        chain_a_gateway.initParams(address(chain_a_host), address(uni_router));
         chain_a_gateway.setTokenIdentifiersERC20(keccak256("USDC-A"), address(chain_a_usdc));
         chain_a_gateway.setTokenIdentifiersERC6160(keccak256("USDC-A"), address(chain_a_wrapped_usdc));
         chain_a_gateway.setForeignTokenIdToLocalTokenId(keccak256("USDC-B"), keccak256("USDC-A"));
@@ -150,7 +154,7 @@ contract TokenGatewayTest is Test {
         chain_a_gateway.setForeignTokenIdToLocalTokenId(keccak256("DAI-B"), keccak256("DAI-A"));
         chain_a_gateway.setChainsGateway(chain_b, address(chain_b_gateway));
 
-        chain_b_gateway.setIsmpHost(address(chain_b_host));
+        chain_b_gateway.initParams(address(chain_b_host), address(uni_router));
         chain_b_gateway.setTokenIdentifiersERC20(keccak256("USDC-B"), address(chain_b_usdc));
         chain_b_gateway.setTokenIdentifiersERC6160(keccak256("USDC-B"), address(chain_b_wrapped_usdc));
         chain_b_gateway.setForeignTokenIdToLocalTokenId(keccak256("USDC-A"), keccak256("USDC-B"));
@@ -271,8 +275,8 @@ contract TokenGatewayTest is Test {
         assertEq(chain_a_dai.balanceOf(address(chain_a_host)), hostDaiAPreBalance + (perByteFee * BODY_BYTES_SIZE) + redeemFee);
         assertEq(chain_a_dai.balanceOf(address(relayer)), relayerDaiAPreBalance - ((perByteFee * BODY_BYTES_SIZE) + redeemFee));
         assertEq(chain_a_wrapped_usdc.balanceOf(address(relayer)), relayerWrappedUsdcAPreBalance - amountToRedeem);
-        assertEq(chain_b_usdc.balanceOf(address(chain_b_gateway)), gatewayUsdcBPreBalance - amountToRedeem);
-        assertEq(chain_b_usdc.balanceOf(to), toUsdcBPreBalance + amountToRedeem);
+        assertEq(chain_b_usdc.balanceOf(address(chain_b_gateway)), (gatewayUsdcBPreBalance - amountToRedeem) + calculateProtocolRedeemFee(amountToRedeem));
+        assertEq(chain_b_usdc.balanceOf(to), (toUsdcBPreBalance + amountToRedeem) - calculateProtocolRedeemFee(amountToRedeem));
     }
 
     function test_bridge_non_feetoken() external {
@@ -317,8 +321,8 @@ contract TokenGatewayTest is Test {
         assertEq(chain_a_usdc.balanceOf(user1), user1UsdcAPreBalance - (amount + amountIn));
         assertEq(chain_a_usdc.balanceOf(address(chain_a_gateway)), gatewayUsdcAPreBalance + amount);
         assertEq(chain_b_wrapped_usdc.balanceOf(address(relayer)), relayerWrappedUsdcBPreBalance + amount);
-        assertEq(chain_b_usdc.balanceOf(to), toUsdcBPreBalance + (amount - calculateProtocolFee(amount)));
-        assertEq(chain_b_usdc.balanceOf(address(relayer)), relayerUsdcBPreBalance - (amount - calculateProtocolFee(amount)));
+        assertEq(chain_b_usdc.balanceOf(to), toUsdcBPreBalance + (amount - calculateProtocolBridgeFee(amount)));
+        assertEq(chain_b_usdc.balanceOf(address(relayer)), relayerUsdcBPreBalance - (amount - calculateProtocolBridgeFee(amount)));
     }
 
     function test_bridge_feetoken() external {
@@ -354,8 +358,8 @@ contract TokenGatewayTest is Test {
         assertEq(chain_a_dai.balanceOf(user1), user1DaiAPreBalance - (amount + (perByteFee * BODY_BYTES_SIZE) + fee));
         assertEq(chain_a_dai.balanceOf(address(chain_a_gateway)), gatewayDaiAPreBalance + amount);
         assertEq(chain_b_wrapped_dai.balanceOf(address(relayer)), relayerWrappedDaiBPreBalance + amount);
-        assertEq(chain_b_dai.balanceOf(to), toDaiBPreBalance + (amount - calculateProtocolFee(amount)));
-        assertEq(chain_b_dai.balanceOf(address(relayer)), relayerDaiBPreBalance - (amount - calculateProtocolFee(amount)));
+        assertEq(chain_b_dai.balanceOf(to), toDaiBPreBalance + (amount - calculateProtocolBridgeFee(amount)));
+        assertEq(chain_b_dai.balanceOf(address(relayer)), relayerDaiBPreBalance - (amount - calculateProtocolBridgeFee(amount)));
     }
 
     function mutateAddress(address addr) internal pure returns (address) {

@@ -122,7 +122,8 @@ contract TokenGateway is IIsmpModule {
 
         uint256 toBridge = params.amount;
 
-        if (erc20 != address(0) && !params.redeem) {
+        if (erc20 != address(0)) {
+            require(!params.redeem, "Gateway: wrong redeem value");
             require(
                 IERC20(erc20).transferFrom(from, address(this), params.amount), "Gateway: Insufficient user balance"
             );
@@ -134,7 +135,8 @@ contract TokenGateway is IIsmpModule {
             if (feeToken != intendedTokenForFee && _fee > 0) {
                 require(handleSwap(from, intendedTokenForFee, feeToken, _fee), "Token swap failed");
             }
-        } else if (erc6160 != address(0) && params.redeem) {
+        } else if (erc6160 != address(0)) {
+            require(params.redeem, "Gateway: wrong redeem value");
             // we're sending an erc6160 asset so we should redeem on the destination if we can.
             IERC6160Ext20(erc6160).burn(from, params.amount, "");
         } else {

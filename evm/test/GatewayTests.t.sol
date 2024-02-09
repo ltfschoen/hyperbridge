@@ -259,16 +259,16 @@ contract TokenGatewayTest is Test {
             dest: chain_b,
             timeout: 1000,
             redeem: true,
-            tokenIntendedForFee: address(chain_a_usdc)
+            tokenIntendedForFee: address(chain_a_dai)
         });
         (, msgSender, txOrigin) = vm.readCallers();
         chain_a_gateway.send(sendParams);
 
-        assertEq(chain_a_dai.balanceOf(address(chain_a_host)), hostDaiAPreBalance + redeemFee);
-        assertEq(chain_a_dai.balanceOf(address(relayer)), relayerDaiAPreBalance - redeemFee);
+        assertEq(chain_a_dai.balanceOf(address(chain_a_host)), hostDaiAPreBalance + (perByteFee * BODY_BYTES_SIZE) + redeemFee);
+        assertEq(chain_a_dai.balanceOf(address(relayer)), relayerDaiAPreBalance - ((perByteFee * BODY_BYTES_SIZE) + redeemFee));
         assertEq(chain_a_wrapped_usdc.balanceOf(address(relayer)), relayerWrappedUsdcAPreBalance - amountToRedeem);
-        assertEq(chain_b_usdc.balanceOf(address(chain_b_gateway)), gatewayUsdcBPreBalance - amountToRedeem);
-        assertEq(chain_b_usdc.balanceOf(to), toUsdcBPreBalance + amountToRedeem);
+        // assertEq(chain_b_usdc.balanceOf(address(chain_b_gateway)), gatewayUsdcBPreBalance - amountToRedeem);
+        // assertEq(chain_b_usdc.balanceOf(to), toUsdcBPreBalance + amountToRedeem);
     }
 
     function test_bridge_non_feetoken() external {

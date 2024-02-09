@@ -178,8 +178,8 @@ contract TokenGateway is IIsmpModule {
         } else if (erc20 != address(0) && erc6160 != address(0)) {
             // relayers double as liquidity providers, todo: protocol fees
             // Perform 0.3% calculation  and deduction here
-            uint256 _protocolBridgeFee = calculateProtocolBridgeFee(body.amount);
-            uint256 _amountToTransfer = body.amount - _protocolBridgeFee;
+            uint256 _protocolLiquidityFee = calculateProtocolLiquidityFee(body.amount);
+            uint256 _amountToTransfer = body.amount - _protocolLiquidityFee;
 
             require(
                 IERC20(erc20).transferFrom(tx.origin, body.to, _amountToTransfer), "Gateway: Insufficient relayer balance"
@@ -254,7 +254,7 @@ contract TokenGateway is IIsmpModule {
         return _fee;
     }
 
-    function calculateProtocolBridgeFee(uint256 _amount) private pure returns (uint256 bridgeFee_) {
+    function calculateProtocolLiquidityFee(uint256 _amount) private pure returns (uint256 bridgeFee_) {
         bridgeFee_ = (_amount * 300) / 100_000;
     }
 

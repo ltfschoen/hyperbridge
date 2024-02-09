@@ -76,6 +76,10 @@ contract TokenGatewayTest is Test {
     address user1 = vm.addr(uint256(keccak256("user1")));
     address user2 = vm.addr(uint256(keccak256("user2")));
 
+    function calculateProtocolFee(uint256 _amount) private pure returns (uint256 percentFee_) {
+        percentFee_ = (_amount * 300) / 1000;
+    }
+
     function label() private {
         vm.label(user1, "user1");
         vm.label(user2, "user2");
@@ -267,8 +271,8 @@ contract TokenGatewayTest is Test {
         assertEq(chain_a_dai.balanceOf(address(chain_a_host)), hostDaiAPreBalance + (perByteFee * BODY_BYTES_SIZE) + redeemFee);
         assertEq(chain_a_dai.balanceOf(address(relayer)), relayerDaiAPreBalance - ((perByteFee * BODY_BYTES_SIZE) + redeemFee));
         assertEq(chain_a_wrapped_usdc.balanceOf(address(relayer)), relayerWrappedUsdcAPreBalance - amountToRedeem);
-        // assertEq(chain_b_usdc.balanceOf(address(chain_b_gateway)), gatewayUsdcBPreBalance - amountToRedeem);
-        // assertEq(chain_b_usdc.balanceOf(to), toUsdcBPreBalance + amountToRedeem);
+        assertEq(chain_b_usdc.balanceOf(address(chain_b_gateway)), gatewayUsdcBPreBalance - amountToRedeem);
+        assertEq(chain_b_usdc.balanceOf(to), toUsdcBPreBalance + amountToRedeem);
     }
 
     function test_bridge_non_feetoken() external {
@@ -313,8 +317,8 @@ contract TokenGatewayTest is Test {
         assertEq(chain_a_usdc.balanceOf(user1), user1UsdcAPreBalance - (amount + amountIn));
         assertEq(chain_a_usdc.balanceOf(address(chain_a_gateway)), gatewayUsdcAPreBalance + amount);
         assertEq(chain_b_wrapped_usdc.balanceOf(address(relayer)), relayerWrappedUsdcBPreBalance + amount);
-        assertEq(chain_b_usdc.balanceOf(to), toUsdcBPreBalance + amount);
-        assertEq(chain_b_usdc.balanceOf(address(relayer)), relayerUsdcBPreBalance - amount);
+        assertEq(chain_b_usdc.balanceOf(to), toUsdcBPreBalance + (amount - calculateProtocolFee(amount)));
+        assertEq(chain_b_usdc.balanceOf(address(relayer)), relayerUsdcBPreBalance - (amount - calculateProtocolFee(amount)));
     }
 
     function test_bridge_feetoken() external {
@@ -350,8 +354,8 @@ contract TokenGatewayTest is Test {
         assertEq(chain_a_dai.balanceOf(user1), user1DaiAPreBalance - (amount + (perByteFee * BODY_BYTES_SIZE) + fee));
         assertEq(chain_a_dai.balanceOf(address(chain_a_gateway)), gatewayDaiAPreBalance + amount);
         assertEq(chain_b_wrapped_dai.balanceOf(address(relayer)), relayerWrappedDaiBPreBalance + amount);
-        assertEq(chain_b_dai.balanceOf(to), toDaiBPreBalance + amount);
-        assertEq(chain_b_dai.balanceOf(address(relayer)), relayerDaiBPreBalance - amount);
+        assertEq(chain_b_dai.balanceOf(to), toDaiBPreBalance + (amount - calculateProtocolFee(amount)));
+        assertEq(chain_b_dai.balanceOf(address(relayer)), relayerDaiBPreBalance - (amount - calculateProtocolFee(amount)));
     }
 
     function mutateAddress(address addr) internal pure returns (address) {

@@ -27,11 +27,6 @@ struct SendParams {
     bool redeem;
     // this is an erc20 that a will select to be used for fee
     address tokenIntendedForFee;
-    
-    // amount for fee, if bridged token is feetoken require that amount or less is taken by host
-    // else, swap the amount for fee into dai and use fee to limit slippage,
-    // ideally minAmountOut should be the fees you expect to pay
-    // uint256 amountForFee;
 }
 
 struct Body {
@@ -125,16 +120,12 @@ contract TokenGateway is IIsmpModule {
         if (erc20 != address(0) && !params.redeem && intendedTokenForFee != address(0)) {
             address feeToken = EvmHost(host).dai();
 
-            // custody the user's funds
-            // require(params.amountForFee <= toBridge, "fee greater than amount");
-
             require(
                 IERC20(erc20).transferFrom(from, address(this), params.amount), "Gateway: Insufficient user balance"
             );
 
             // Calculate output fee in DAI before swap: We can use swapTokensForExactTokens() on Uniswap since we know the output amount
             HostParams memory _hostParams = EvmHost(host).hostParams();
-            
             uint256 _fee = (_hostParams.perByteFee * BODY_BYTES_SIZE) + params.fee;
 
             // only swap if the fee token is not the token intended for fee and if the amount the user chose to bridge is > 0
@@ -151,7 +142,6 @@ contract TokenGateway is IIsmpModule {
                 require(IERC20(intendedTokenForFee).transferFrom(from, address(this), intendedFeeTokenAmountIn), "insufficient intended fee token");
 
                 require(IERC20(intendedTokenForFee).approve(address(uniswapV2Router), intendedFeeTokenAmountIn), "approve failed.");
-
 
                 uniswapV2Router.swapTokensForExactTokens(
                     _fee, intendedFeeTokenAmountIn, path, tx.origin, block.timestamp
@@ -200,9 +190,15 @@ contract TokenGateway is IIsmpModule {
             require(IERC20(erc20).transfer(body.to, body.amount), "Gateway: Insufficient Balance");
         } else if (erc20 != address(0) && erc6160 != address(0)) {
             // relayers double as liquidity providers, todo: protocol fees
+
+            // Perform 0.3% calculation here
+            uint256 _protocolFee = calculateProtocolFee(body.amount);
+            uint256 amountToTransfer = body.amount - _protocolFee;
+
             require(
-                IERC20(erc20).transferFrom(tx.origin, body.to, body.amount), "Gateway: Insufficient relayer balance"
+                IERC20(erc20).transferFrom(tx.origin, body.to, amountToTransfer), "Gateway: Insufficient relayer balance"
             );
+
             // hand the relayer the erc6160, so they can redeem on the source chain
             IERC6160Ext20(erc6160).mint(tx.origin, body.amount, "");
         } else if (erc6160 != address(0)) {
@@ -243,5 +239,9 @@ contract TokenGateway is IIsmpModule {
 
     function onGetTimeout(GetRequest memory) external view onlyIsmpHost {
         revert("Token gateway doesn't emit Get Requests");
+    }
+
+    function calculateProtocolFee(uint256 _amount) private pure returns (uint256 percentFee_) {
+        percentFee_ = (_amount * 300) / 1000;
     }
 }

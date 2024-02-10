@@ -122,21 +122,19 @@ contract TokenGateway is IIsmpModule {
 
         uint256 toBridge = params.amount;
 
-        if (erc20 != address(0)) {
-            require(!params.redeem, "Gateway: wrong redeem value");
+        if (erc20 != address(0) && !params.redeem) {
             require(
                 IERC20(erc20).transferFrom(from, address(this), params.amount), "Gateway: Insufficient user balance"
             );
 
             // Calculate output fee in DAI before swap: We can use swapTokensForExactTokens() on Uniswap since we know the output amount
-            uint256 _fee = relayerPlusBytesFee(params.fee);
+            uint256 _fee = calculateProtocolBridgeFee(params.fee);
 
             // only swap if the feeToken is not the token intended for fee and if fee > 0
             if (feeToken != intendedTokenForFee && _fee > 0) {
                 require(handleSwap(from, intendedTokenForFee, feeToken, _fee), "Token swap failed");
             }
-        } else if (erc6160 != address(0)) {
-            require(params.redeem, "Gateway: wrong redeem value");
+        } else if (erc6160 != address(0) && params.redeem) {
             // we're sending an erc6160 asset so we should redeem on the destination if we can.
             IERC6160Ext20(erc6160).burn(from, params.amount, "");
         } else {
@@ -248,7 +246,7 @@ contract TokenGateway is IIsmpModule {
         return true;
     }
 
-    function relayerPlusBytesFee(uint256 _relayerFee) private view returns (uint256) {
+    function calculateProtocolBridgeFee(uint256 _relayerFee) private view returns (uint256) {
         // Multiply perByteFee by the byte size of the body struct, and sum with relayer fee
         HostParams memory _hostParams = EvmHost(host).hostParams();
         uint256 _fee = (_hostParams.perByteFee * BODY_BYTES_SIZE) + _relayerFee;

@@ -51,6 +51,9 @@ contract TokenGateway is IIsmpModule {
     // Bytes size of Body struct
     uint256 constant BODY_BYTES_SIZE = 160;
 
+    // Maximum slippage of 0.5%
+    uint256 maxSlippagePercentage = 50;
+
     // mapping of token identifier to erc6160 contracts
     mapping(bytes32 => address) private _erc6160s;
     // mapping of token identifier to erc20 contracts
@@ -234,15 +237,18 @@ contract TokenGateway is IIsmpModule {
         path[0] = _fromToken;
         path[1] = _toToken;
 
-        uint _fromTokenAmountIn = uniswapV2Router.getAmountsIn(_toTokenAmountOut, path)[0];
+        uint[] memory amountsIn = uniswapV2Router.getAmountsIn(_toTokenAmountOut, path);
+        uint _fromTokenAmountIn = amountsIn[0];
 
-        // How do we handle cases of slippage - Todo: Handle Slippage
+        // Handling Slippage
+        uint slippageAmount = (_fromTokenAmountIn * maxSlippagePercentage) / 10000; // Adjusted for percentage times 100
+        uint amountInMax = _fromTokenAmountIn + slippageAmount;
 
         require(IERC20(_fromToken).transferFrom(_sender, address(this), _fromTokenAmountIn), "insufficient intended fee token");
         require(IERC20(_fromToken).approve(address(uniswapV2Router), _fromTokenAmountIn), "approve failed.");
 
         uniswapV2Router.swapTokensForExactTokens(
-            _toTokenAmountOut, _fromTokenAmountIn, path, tx.origin, block.timestamp
+            _toTokenAmountOut, amountInMax, path, tx.origin, block.timestamp
         );
 
         return true;

@@ -52,7 +52,7 @@ contract TokenGateway is IIsmpModule {
     uint256 constant BODY_BYTES_SIZE = 160;
 
     // Maximum slippage of 0.5%
-    uint256 maxSlippagePercentage = 50;
+    uint256 maxSlippagePercentage = 50; // 0.5 * 100
 
     // mapping of token identifier to erc6160 contracts
     mapping(bytes32 => address) private _erc6160s;
